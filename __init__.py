@@ -25,7 +25,7 @@ bl_info = {
     "name": "Camera Sequencer",
     "description": "Adds real time camera editing to the Sequencer",
     "author": "David Alonso",
-    "version": (0, 0, 1),
+    "version": (0, 2, 0),
     "blender": (2, 83, 0),
     "location": "Video Sequencer > Cam Sequencer",
     "warning": "",
@@ -46,6 +46,7 @@ from bpy.props import (StringProperty,
 from bpy.types import (Panel,
                        Menu,
                        Operator,
+                       Macro,
                        PropertyGroup,
                        )
 
@@ -76,7 +77,15 @@ class CameraSequencer_Properties(PropertyGroup):
     last_active_camera: StringProperty(
         default = ""
     )
-    
+
+    dragging_range_start: IntProperty(
+        default = 0
+    )
+
+    dragging_range_end: IntProperty(
+        default = 0
+    )
+
 
 # ------------------------------------------------------------------------
 #    Operators
@@ -151,6 +160,30 @@ class CAMERASEQUENCER_OT_AssignCamera(Operator):
             camera_sequencer_handler(context.scene)
         return {'FINISHED'}
 
+class End(Operator):
+    bl_label = "Finish dragging strip"
+    bl_idname = "dragkeys.end"
+
+    def execute(self, context):
+        finish_range = get_selected_range()
+        camseq = context.scene.camsequencer_tool
+        offset = finish_range[0] - camseq.dragging_range_start
+        move_all_keys([camseq.dragging_range_start, camseq.dragging_range_end], offset)
+        return {'FINISHED'}
+
+class Start(Operator):
+    bl_label = "Start dragging strip"
+    bl_idname = "dragkeys.start"
+
+    def execute(self, context):
+        camseq = context.scene.camsequencer_tool
+        camseq.dragging_range_start, camseq.dragging_range_end = get_selected_range()
+        return {'FINISHED'}
+
+class DRAGKEYS(Macro):
+    bl_label = "Drag strip and keys macro"
+    bl_idname = "dragkeys.trigger_macro"
+
 
 # ------------------------------------------------------------------------
 #    UI
@@ -190,10 +223,14 @@ class CAMERASEQUENCER_PT_panel(Panel):
         row.operator("camera_sequencer.add_shot", text="Add Shot", icon="FILE_MOVIE")
         row.prop(camseq, "shot_duration")
         layout.menu(CAMERASEQUENCER_MT_cameras.bl_idname, text="Cameras", icon="OUTLINER_OB_CAMERA")
-
+        """Move this to its own panel of shot (strip) properties
+        # Only display camera selector if there's a strip selected
+        if context.scene.sequence_editor.active_strip:
+            layout.menu(CAMERASEQUENCER_MT_cameras.bl_idname, text="Cameras", icon="OUTLINER_OB_CAMERA")
+        """
 
 # ------------------------------------------------------------------------
-#    Custoom functions
+#    Custom functions
 # ------------------------------------------------------------------------
 
 def activate_camera_view():
@@ -221,6 +258,24 @@ def update_shot_name(old_name, camera):
     """Returns string replacing the camera part of the shot name"""
     new_name = re.sub(r"\(.*\)", "(%s)"%camera, old_name)
     return new_name
+
+def move_all_keys(frame_range, offset):
+    """Offsets the time of all keyframes in a range"""
+    for action in bpy.data.actions:
+        for fcurve in action.fcurves:
+            for point in fcurve.keyframe_points:
+                if frame_range[0] <= point.co.x <= frame_range[1]: 
+                    point.co.x += offset
+                    point.handle_left.x += offset
+                    point.handle_right.x += offset
+
+def get_selected_range():
+    """Returns maximum frame range of selected strips"""
+    selected_strips = [x for x in bpy.context.scene.sequence_editor.sequences if x.select]
+    selected_strips = sorted(selected_strips, key=lambda x:x.frame_final_start)
+    lowest_frame = selected_strips[0].frame_final_start
+    highest_frame = selected_strips[-1].frame_final_end
+    return [lowest_frame, highest_frame]
 
 @persistent
 def camera_sequencer_handler(scene):
@@ -263,6 +318,9 @@ classes = (
     CAMERASEQUENCER_OT_NextShot,
     CAMERASEQUENCER_OT_AddShot,
     CAMERASEQUENCER_OT_AssignCamera,
+    End,
+    Start,
+    DRAGKEYS,
     CAMERASEQUENCER_MT_cameras,
     CAMERASEQUENCER_PT_panel
 )
@@ -271,6 +329,15 @@ def register():
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+    # Configure macro for moving keyframes while dragging strips
+    DRAGKEYS.define("DRAGKEYS_OT_start")
+    DRAGKEYS.define("TRANSFORM_OT_translate")
+    DRAGKEYS.define("DRAGKEYS_OT_end")
+    # Add macro shortcut
+    wm = bpy.context.window_manager
+    km = wm.keyconfigs.addon.keymaps.new(name='Sequencer', space_type='SEQUENCE_EDITOR')
+    kmi = km.keymap_items.new(DRAGKEYS.bl_idname, 'G', 'PRESS', alt=True)
+
     bpy.types.Scene.camsequencer_tool = PointerProperty(type=CameraSequencer_Properties)
     bpy.app.handlers.frame_change_post.append(camera_sequencer_handler)
 
