@@ -364,12 +364,17 @@ def register():
     from bpy.utils import register_class
     for cls in classes:
         register_class(cls)
+
     # Configure macro for moving keyframes while dragging strips
     DRAGKEYS.define("DRAGKEYS_OT_start")
     DRAGKEYS.define("TRANSFORM_OT_translate")
     DRAGKEYS.define("DRAGKEYS_OT_end")
-    # Add macro shortcut
+
+    # Add shortcuts
     wm = bpy.context.window_manager
+    km = wm.keyconfigs.addon.keymaps.new(name='Window', space_type='EMPTY', region_type='WINDOW')
+    kmi = km.keymap_items.new(CAMERASEQUENCER_OT_PreviousShot.bl_idname, 'LEFT_ARROW', 'PRESS', ctrl=True)
+    kmi = km.keymap_items.new(CAMERASEQUENCER_OT_NextShot.bl_idname, 'RIGHT_ARROW', 'PRESS', ctrl=True)
     km = wm.keyconfigs.addon.keymaps.new(name='Sequencer', space_type='SEQUENCE_EDITOR')
     kmi = km.keymap_items.new(DRAGKEYS.bl_idname, 'G', 'PRESS', alt=True)
 
