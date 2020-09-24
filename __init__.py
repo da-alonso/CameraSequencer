@@ -25,7 +25,7 @@ bl_info = {
     "name": "Camera Sequencer",
     "description": "Adds real time camera editing to the Sequencer",
     "author": "David Alonso",
-    "version": (0, 2, 0),
+    "version": (0, 2, 1),
     "blender": (2, 83, 0),
     "location": "Video Sequencer > Cam Sequencer",
     "warning": "",
@@ -92,8 +92,8 @@ class CameraSequencer_Properties(PropertyGroup):
 # ------------------------------------------------------------------------
 
 class CAMERASEQUENCER_OT_PlaySequence(Operator):
-    bl_label = "Play Sequence"
     bl_idname = "camera_sequencer.play_sequence"
+    bl_label = "Play Sequence"
     bl_description = "Play/Stop Sequencer"
 
     def execute(self, context):
@@ -104,8 +104,8 @@ class CAMERASEQUENCER_OT_PlaySequence(Operator):
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_PreviousShot(Operator):
-    bl_label = "Previous Shot"
     bl_idname = "camera_sequencer.previous_shot"
+    bl_label = "Previous Shot"
     bl_description = "Jump to previous shot"
 
     def execute(self, context):
@@ -119,8 +119,8 @@ class CAMERASEQUENCER_OT_PreviousShot(Operator):
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_NextShot(Operator):
-    bl_label = "Next Shot"
     bl_idname = "camera_sequencer.next_shot"
+    bl_label = "Next Shot"
     bl_description = "Jump to next shot"
 
     def execute(self, context):
@@ -134,8 +134,8 @@ class CAMERASEQUENCER_OT_NextShot(Operator):
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_AddShot(Operator):
-    bl_label = "Add Shot"
     bl_idname = "camera_sequencer.add_shot"
+    bl_label = "Add Shot"
     bl_description = "Add shot strip to the Sequencer"
 
     def execute(self, context):
@@ -148,8 +148,8 @@ class CAMERASEQUENCER_OT_AddShot(Operator):
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_AssignCamera(Operator):
-    bl_label = "Asign camera to selected strip"
     bl_idname = "camera_sequencer.assign_strip_camera"
+    bl_label = "Asign camera to selected strip"
     camera: StringProperty()
 
     def execute(self, context):
@@ -161,19 +161,22 @@ class CAMERASEQUENCER_OT_AssignCamera(Operator):
         return {'FINISHED'}
 
 class End(Operator):
-    bl_label = "Finish dragging strip"
     bl_idname = "dragkeys.end"
+    bl_label = "Finish dragging strip"
 
     def execute(self, context):
-        finish_range = get_selected_range()
         camseq = context.scene.camsequencer_tool
-        offset = finish_range[0] - camseq.dragging_range_start
-        move_all_keys([camseq.dragging_range_start, camseq.dragging_range_end], offset)
+        finish_range_start, finish_range_end = get_selected_range()
+        offset = finish_range_start - camseq.dragging_range_start
+        orig_range = [camseq.dragging_range_start, camseq.dragging_range_end]
+        move_all_keys(orig_range, offset)
+        move_all_greasepencil_keys(orig_range, offset)
+        refresh_dopesheet() # Greasepencil's dopesheet doesn't auto-refresh
         return {'FINISHED'}
 
 class Start(Operator):
-    bl_label = "Start dragging strip"
     bl_idname = "dragkeys.start"
+    bl_label = "Start dragging strip"
 
     def execute(self, context):
         camseq = context.scene.camsequencer_tool
@@ -181,8 +184,9 @@ class Start(Operator):
         return {'FINISHED'}
 
 class DRAGKEYS(Macro):
-    bl_label = "Drag strip and keys macro"
     bl_idname = "dragkeys.trigger_macro"
+    bl_label = "Drag strip and keys macro"
+    bl_options = {'REGISTER', 'UNDO'}
 
 
 # ------------------------------------------------------------------------
@@ -264,10 +268,26 @@ def move_all_keys(frame_range, offset):
     for action in bpy.data.actions:
         for fcurve in action.fcurves:
             for point in fcurve.keyframe_points:
-                if frame_range[0] <= point.co.x <= frame_range[1]: 
+                if frame_range[0] <= point.co.x <= frame_range[1]:
                     point.co.x += offset
                     point.handle_left.x += offset
                     point.handle_right.x += offset
+
+def move_all_greasepencil_keys(frame_range, offset):
+    """Offsets the time of all greasepencil keyframes in a range"""
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'GPENCIL':
+            gpencil = bpy.context.scene.objects[obj.name]
+            for layer in gpencil.data.layers:
+                for frame in layer.frames:
+                    if frame_range[0] <= frame.frame_number <= frame_range[1]:
+                        frame.frame_number += offset
+
+def refresh_dopesheet():
+    """Forces redraw of all dopesheet areas"""
+    for area in bpy.context.screen.areas:
+        if area.ui_type == 'DOPESHEET':
+            area.tag_redraw()
 
 def get_selected_range():
     """Returns maximum frame range of selected strips"""
