@@ -180,7 +180,10 @@ class Start(Operator):
 
     def execute(self, context):
         camseq = context.scene.camsequencer_tool
-        camseq.dragging_range_start, camseq.dragging_range_end = get_selected_range()
+        sel_range = get_selected_range()
+        camseq.dragging_range_start, camseq.dragging_range_end = sel_range
+        deselect_strip_handles()
+        select_strips_in_range(sel_range)
         return {'FINISHED'}
 
 class DRAGKEYS(Macro):
@@ -251,6 +254,18 @@ def get_all_sequencer_strips():
         if strip.type == "COLOR" and re.match("sh_\d+\(.*\)", strip.name):
             sequencer_strips.append(strip)
     return sorted(sequencer_strips, key=lambda x:x.frame_final_start)
+
+def deselect_strip_handles():
+    """Deselects all strips' handles"""
+    for strip in bpy.context.scene.sequence_editor.sequences:
+        strip.select_left_handle = False
+        strip.select_right_handle = False
+
+def select_strips_in_range(frame_range):
+    """Selects all strips contained in a frame range"""
+    for strip in get_all_sequencer_strips():
+        if frame_range[0] <= strip.frame_final_end <= frame_range[1]:
+            strip.select = True
 
 def create_new_shot_name(camera=""):
     """Returns string with shot name based on camera name"""
