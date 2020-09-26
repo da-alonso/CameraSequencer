@@ -97,6 +97,8 @@ class CAMERASEQUENCER_OT_PlaySequence(Operator):
     bl_description = "Play/Stop Sequencer"
 
     def execute(self, context):
+        start, end = get_full_timeline_range()
+        set_timeline_range(start, end)
         activate_camera_view()
         bpy.ops.screen.animation_play()
         camseq = context.scene.camsequencer_tool
@@ -107,30 +109,40 @@ class CAMERASEQUENCER_OT_PreviousShot(Operator):
     bl_idname = "camera_sequencer.previous_shot"
     bl_label = "Previous Shot"
     bl_description = "Jump to previous shot"
+    set_range: bpy.props.BoolProperty(
+        name="Set range", description="Set timeline range to strip's range", default=False
+    )
 
     def execute(self, context):
         activate_camera_view()
         scene = context.scene
-        all_strips = list(sorted(scene.sequence_editor.sequences, key=lambda x:x.frame_final_start, reverse=True))
-        for strip in all_strips:
+        for strip in get_all_sequencer_strips(reverse=True):
             if strip.frame_final_start < scene.frame_current:
                 scene.frame_current = strip.frame_final_start
-                break        
+                break
+        if self.set_range:
+            set_timeline_range(strip.frame_final_start, strip.frame_final_end)
+            self.set_range = False # Toggle it back so the property doesn't stick
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_NextShot(Operator):
     bl_idname = "camera_sequencer.next_shot"
     bl_label = "Next Shot"
     bl_description = "Jump to next shot"
+    set_range: bpy.props.BoolProperty(
+        name="Set range", description="Set timeline range to strip's range", default=False
+    )
 
     def execute(self, context):
         activate_camera_view()        
         scene = context.scene
-        all_strips = list(sorted(scene.sequence_editor.sequences, key=lambda x:x.frame_final_start))
-        for strip in all_strips:
+        for strip in get_all_sequencer_strips():
             if strip.frame_final_start > scene.frame_current:
                 scene.frame_current = strip.frame_final_start
                 break
+        if self.set_range:
+            set_timeline_range(strip.frame_final_start, strip.frame_final_end)
+            self.set_range = False # Toggle it back so the property doesn't stick
         return {'FINISHED'}
 
 class CAMERASEQUENCER_OT_AddShot(Operator):
@@ -247,13 +259,25 @@ def activate_camera_view():
             area.spaces[0].region_3d.view_perspective = 'CAMERA'
             break
 
-def get_all_sequencer_strips():
+def get_all_sequencer_strips(reverse=False):
     """Returns a sorted list of Sequencer's camera related strips"""
     sequencer_strips = []
     for strip in bpy.context.scene.sequence_editor.sequences:
         if strip.type == "COLOR" and re.match("sh_\d+\(.*\)", strip.name):
             sequencer_strips.append(strip)
-    return sorted(sequencer_strips, key=lambda x:x.frame_final_start)
+    return sorted(sequencer_strips, key=lambda x:x.frame_final_start, reverse=reverse)
+
+def get_full_timeline_range():
+    """Gets the range of timeline containing all strips"""
+    strips = get_all_sequencer_strips()
+    lowest_start = strips[0].frame_final_start
+    highest_end = strips[-1].frame_final_end
+    return [lowest_start, highest_end]
+
+def set_timeline_range(start, end):
+    """Changes animation timeline range"""
+    bpy.context.scene.frame_start = start
+    bpy.context.scene.frame_end = end
 
 def deselect_strip_handles():
     """Deselects all strips' handles"""
@@ -375,6 +399,10 @@ def register():
     km = wm.keyconfigs.addon.keymaps.new(name='Window', space_type='EMPTY', region_type='WINDOW')
     kmi = km.keymap_items.new(CAMERASEQUENCER_OT_PreviousShot.bl_idname, 'LEFT_ARROW', 'PRESS', ctrl=True)
     kmi = km.keymap_items.new(CAMERASEQUENCER_OT_NextShot.bl_idname, 'RIGHT_ARROW', 'PRESS', ctrl=True)
+    kmi = km.keymap_items.new(CAMERASEQUENCER_OT_PreviousShot.bl_idname, 'LEFT_ARROW', 'PRESS', ctrl=True, shift=True)
+    setattr(kmi.properties, 'set_range', True)
+    kmi = km.keymap_items.new(CAMERASEQUENCER_OT_NextShot.bl_idname, 'RIGHT_ARROW', 'PRESS', ctrl=True, shift=True)
+    setattr(kmi.properties, 'set_range', True)
     km = wm.keyconfigs.addon.keymaps.new(name='Sequencer', space_type='SEQUENCE_EDITOR')
     kmi = km.keymap_items.new(DRAGKEYS.bl_idname, 'G', 'PRESS', alt=True)
 
