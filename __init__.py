@@ -121,7 +121,7 @@ class CAMERASEQUENCER_OT_PreviousShot(Operator):
                 scene.frame_current = strip.frame_final_start
                 break
         if self.set_range:
-            set_timeline_range(strip.frame_final_start, strip.frame_final_end)
+            set_range_and_frame(strip.frame_final_start, strip.frame_final_end)
             self.set_range = False # Toggle it back so the property doesn't stick
         return {'FINISHED'}
 
@@ -141,7 +141,7 @@ class CAMERASEQUENCER_OT_NextShot(Operator):
                 scene.frame_current = strip.frame_final_start
                 break
         if self.set_range:
-            set_timeline_range(strip.frame_final_start, strip.frame_final_end)
+            set_range_and_frame(strip.frame_final_start, strip.frame_final_end)
             self.set_range = False # Toggle it back so the property doesn't stick
         return {'FINISHED'}
 
@@ -278,6 +278,52 @@ def set_timeline_range(start, end):
     """Changes animation timeline range"""
     bpy.context.scene.frame_start = start
     bpy.context.scene.frame_end = end
+
+def create_dummy_obj_keys(start, end):
+    """Returns a dummy object with two keyframes"""
+    bpy.ops.object.empty_add()
+    obj = bpy.context.active_object
+    obj.keyframe_insert(data_path="location", frame=start)
+    obj.keyframe_insert(data_path="location", frame=end)
+    return obj
+
+def create_dummy_gp_keys(start, end):
+    """Returns a dummy greasepencil object with two keyframes"""
+    bpy.ops.object.gpencil_add()
+    gpencil = bpy.context.active_object
+    layer = gpencil.data.layers.new(name='dummy')
+    layer.frames.new(start)
+    layer.frames.new(end)
+    return gpencil
+
+def context_override(area):
+    """Overrides current context to set it to area"""
+    region = area.regions[-1]
+    c = bpy.context.copy()
+    c["space_data"] = area.spaces.active
+    c["area"] = area
+    c["region"] = region
+    return c
+
+def frame_all_dopesheets_range(start, end):
+    """Frames all dopesheet-type areas to a frame range.
+    I'm actually repulsed by this code but it seems
+    there's no easier way of framing timelines in Blender :/
+    """
+    for area in bpy.context.screen.areas:
+        if area.type != 'DOPESHEET_EDITOR':
+            continue
+
+        if area.ui_type in ['DOPESHEET', 'TIMELINE', 'GPENCIL']:
+            dummy_obj = create_dummy_gp_keys(start, end) if area.ui_type == 'GPENCIL' else create_dummy_obj_keys(start, end) 
+            c = context_override(area) # Context override
+            bpy.ops.action.view_all(c) # Frame all keyframes
+            bpy.data.objects.remove(dummy_obj)
+
+def set_range_and_frame(start, end):
+    """Changes animation timeline range and frames it"""
+    set_timeline_range(start, end)
+    frame_all_dopesheets_range(start, end)
 
 def deselect_strip_handles():
     """Deselects all strips' handles"""
